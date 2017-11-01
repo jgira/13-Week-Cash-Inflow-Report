@@ -1,0 +1,91 @@
+SELECT 
+ISNULL(CASE WHEN PROJMGRName.FirstName IS NULL THEN PROJMGRName.LastName ELSE PROJMGRName.LastName + ', ' + PROJMGRName.FirstName END, '') As group1, ISNULL(PR.WBS1, '') As group2, Min(PR.Name + (case when PRPrincipal.LastName is null then '' else ' / Project Director: ' end+ISNULL(PRPrincipal.LastName,''))+(case when PRProjMgr.LastName is null then '' else ' / Project Manager: ' end+ISNULL(PRProjMgr.LastName,''))) As groupDesc2, 
+ '' As groupDesc1, ledgerAR.WBS1 AS WBS1, 
+Min(ledgerAR.WBS2) AS WBS2, 
+Min(ledgerAR.WBS3) AS WBS3,  
+'' AS linkWBS1, 
+'' AS linkWBS2, 
+'' AS linkWBS3, 
+Min(PR.SubLevel) AS SubLevel1,  
+Min(LEVEL2.SubLevel) AS SubLevel2,  
+Min(LEVEL3.SubLevel) AS SubLevel3,  
+'' As currencyCodeProj,'' As currencyCodeBill,'' As currencyCodeFunct,'' as currencyCodePres, 0 As currencyCodeProjCount, 0 As currencyCodeBillCount, 0 As currencyCodeFunctCount, 0 As currencyCodePresCount, 0 As decimalPlacesProj, 0 As decimalPlacesBill, 0 As decimalPlacesFunct, 0 As decimalPlacesPres, '' As currencySymbolProj, '' As currencySymbolBill, '' As currencySymbolFunct, '' As currencySymbolPres,  
+Min(case when WBS1RetainageBal<>0.0 and WBS1InvoiceBal<=WBS1RetainageBal then ISNULL(MinAR.minRetainageDate,MinAR.minInvoiceDate) else MinAR.minInvoiceDate end) AS InvoiceDate, 
+Min(MinAR.minDueDate) AS DueDate, 
+case when Min(case when WBS1RetainageBal<>0.0 and WBS1InvoiceBal<=WBS1RetainageBal then ISNULL(MinAR.minRetainageDate,MinAR.minInvoiceDate) else MinAR.minInvoiceDate end) IS NULL then 0 else datediff(day,Min(case when WBS1RetainageBal<>0.0 and WBS1InvoiceBal<=WBS1RetainageBal then ISNULL(MinAR.minRetainageDate,MinAR.minInvoiceDate) else MinAR.minInvoiceDate end),@custvToday) end AS DaysOld, 
+
+AR.Invoice AS InvoiceNumber, 
+'' AS InvComment, 
+Sum(case when ledgerAR.TransType=/*N*/'IN' then - amount  else 
+case when ledgerAR.TransType=/*N*/'CR' AND ledgerAR.SubType='T' then - amount  else  amount  end end ) AS InvoiceBalance, 
+Sum(case when ledgerAR.TransType=/*N*/'IN' AND ledgerAR.SubType = 'I' then - amount  else 0 end) AS Interest, 
+Sum(case when ledgerAR.TransType=/*N*/'IN' and ledgerAR.Subtype='R' then  amount  else 0 end) AS Retainage, 
+0 AS Retainer, 
+Max(PR.Name) as WBS1Name, 
+Max(LEVEL2.Name) as WBS2Name, 
+Max(LEVEL3.Name) as WBS3Name, 
+Max(PR.ClientID) as ClientID, 
+Max(PR.ClAddress) as ClAddress, 
+Max(PR.ContactID) as ContactID,
+Max(PR.BillingClientID) as BillClientID, 
+Max(PR.ClBillingAddr) as BillClAddress,  
+Max(PR.BillingContactID) as BillContactID, 
+Max(ISNULL(BTBGSubs.MainWBS1, PR.WBS1)) as BillingGroupID, 
+Max(ISNULL(MAINPR.Name, PR.Name)) as BillingGroupName,  
+min(CASE WHEN (ledgerAR.TransType=/*N*/'CR' AND ledgerAR.SubType='R') THEN 'R' WHEN (ledgerAR.TransType=/*N*/'CR' AND ledgerAR.SubType='T') THEN 'T'  
+WHEN (ledgerAR.TransType=/*N*/'IN' AND IsNull(ledgerAR.SubType, ' ') = ' ') THEN 'I' ELSE ' ' END) AS ArType, 
+Max(CASE WHEN ledgerAR.TransType = /*N*/'IN' AND ledgerAR.SubType IS NULL THEN 'Y' ELSE 'N' END) AS invoiceExists, 
+'N' As PreInvoice, Max(LastReceiptQuery.LastRecDate) as LastRecDate,  Max(LastReceiptQuery.LastRecInv) as LastRecInv,  Max(IsNull(LastReceiptQuery.LastRecAmt, 0)) as LastRecAmt, 
+ProjectCustomTabFields.CustPaymentTerms as 'PaymentTermt', ((DateDiff("D", (Min(case when WBS1RetainageBal<>0.0 and WBS1InvoiceBal<=WBS1RetainageBal then ISNULL(MinAR.minRetainageDate,MinAR.minInvoiceDate) else MinAR.minInvoiceDate end)), GETDATE())- ProjectCustomTabFields.CustPaymentTerms) * -1) +5 as 'DaysUntilPmt', CL.Name
+
+FROM AR 
+INNER JOIN ledgerAR on AR.WBS1 = ledgerAR.WBS1 AND AR.WBS2 = ledgerAR.WBS2 AND AR.WBS3 = ledgerAR.WBS3 AND AR.Invoice = LedgerAR.Invoice 
+INNER JOIN PR on AR.WBS1 = PR.WBS1 AND PR.WBS2 = /*N*/' ' AND PR.WBS3 = /*N*/' '   LEFT JOIN EM AS PROJMGRName ON PR.Projmgr = PROJMGRName.Employee
+INNER JOIN PR AS LEVEL2 on AR.WBS1 = LEVEL2.WBS1 AND AR.WBS2 = LEVEL2.WBS2 AND LEVEL2.WBS3 = /*N*/' '
+INNER JOIN PR AS LEVEL3 on AR.WBS1 = LEVEL3.WBS1 AND AR.WBS2 = LEVEL3.WBS2 AND AR.WBS3 = LEVEL3.WBS3 
+Left Join ProjectCustomTabFields ON ProjectCustomTabFields.WBS1=LEVEL3.WBS1 and ProjectCustomTabFields.WBS2=' ' and ProjectCustomTabFields.WBS3=' '
+LEFT JOIN BTBGSubs on AR.WBS1=BTBGSubs.SubWBS1 
+LEFT JOIN PR AS MAINPR ON BTBGSubs.MainWBS1 = MAINPR.WBS1 AND MAINPR.WBS2 = /*N*/' ' AND MAINPR.WBS3 = /*N*/' '
+LEFT JOIN CL on CL.clientID = PR.ClientID 
+LEFT JOIN CL as CLBill on CLBill.clientID = PR.billingClientID 
+LEFT JOIN Contacts as BLCT on BLCT.ContactID = PR.BillingContactID 
+LEFT JOIN EM as PRPRINCIPAL ON PR.PRINCIPAL = PRPRINCIPAL.Employee 
+LEFT JOIN EM as PRProjMgr ON PR.ProjMgr = PRProjMgr.Employee
+LEFT JOIN  (SELECT LRQry.WBS1,  Max(LRQry.TransDate) As LastRecDate,  substring(max(convert(varchar(10), LRQry.TransDate, 102) + LRQry.Invoice), 11, len(max(convert(varchar(10), LRQry.TransDate, 102) + LRQry.invoice))) as LastRecInv,  -1 * Convert(money,Substring(Max(convert(varchar,LRQry.TransDate,102) + LRQry.Invoice + Convert(varchar,Amount)),  len(Max(convert(varchar,LRQry.TransDate,102) + LRQry.Invoice))+1 ,  len(Max(convert(varchar,LRQry.TransDate,102) + LRQry.Invoice + Convert(varchar,LRQry.Amount)))-  len(Max(convert(varchar,LRQry.TransDate,102) + LRQry.Invoice)))) As LastRecAmt  FROM  (  Select LedgerAR.WBS1, LedgerAR.TransDate, LedgerAR.Invoice,Sum(amount) As Amount  FROM LedgerAR  INNER JOIN PR on LedgerAR.WBS1 = PR.WBS1 AND PR.WBS2 = /*N*/' ' AND PR.WBS3 = /*N*/' '  INNER JOIN PR AS LEVEL2 on LedgerAR.WBS1 = LEVEL2.WBS1 AND LedgerAR.WBS2 = LEVEL2.WBS2 AND LEVEL2.WBS3 = /*N*/' '  INNER JOIN PR AS LEVEL3 on LedgerAR.WBS1 = LEVEL3.WBS1 AND LedgerAR.WBS2 = LEVEL3.WBS2 AND LedgerAR.WBS3 = LEVEL3.WBS3  LEFT JOIN BTBGSubs on PR.WBS1 = BTBGSubs.SubWBS1  LEFT JOIN CL on CL.clientID = PR.ClientID  LEFT JOIN CL as CLBill on CLBill.clientID = PR.billingClientID  LEFT JOIN Contacts as BLCT on BLCT.ContactID = PR.BillingContactID  LEFT JOIN AR ON AR.WBS1 = ledgerAR.WBS1 AND AR.WBS2 = ledgerAR.WBS2 AND AR.WBS3 = ledgerAR.WBS3 AND AR.Invoice = LedgerAR.Invoice  WHERE   TransType = /*N*/'CR' AND SubType = 'R' AND amount <> 0  AND ledgerAR.AutoEntry = 'N' AND ledgerAR.Period <= @custvPeriod AND AR.linkCompany IS NULL  GROUP BY LedgerAR.WBS1, LedgerAR.Invoice, LedgerAR.TransDate) As LRQry  GROUP BY LRQry.WBS1) AS LastReceiptQuery ON PR.WBS1 = LastReceiptQuery.WBS1 
+
+, 
+(select  B.minWBS1, B.minInvoice,  A.WBS1InvoiceBal, A.WBS1RetainageBal,  B.minInvoiceDate, B.minRetainageDate, B.minDueDate  
+FROM (select  ledgerAR.wbs1,ledgerAR.invoice,  Sum(case when ledgerAR.taxcode is NULL then case when ledgerAR.TransType=/*N*/'IN' then -amount  else case when ledgerAR.TransType=/*N*/'CR' AND ledgerAR.SubType='T' then -amount  else  amount  end end else 0.0 end ) AS WBS1InvoiceBal,  Sum(case when ledgerAR.taxcode is NULL then case when ledgerAR.TransType=/*N*/'IN' and ledgerAR.Subtype='R' and amount < 0.0 then -amount else 0 end else 0.0 end) AS WBS1RetainageBal  
+from ledgerAR, AR  INNER JOIN PR  on AR.WBS1 = PR.WBS1 AND PR.WBS2 = /*N*/' ' AND PR.WBS3 = /*N*/' '  
+INNER JOIN PR AS LEVEL2 on AR.WBS1 = LEVEL2.WBS1 AND AR.WBS2 = LEVEL2.WBS2 AND LEVEL2.WBS3 = /*N*/' '  
+INNER JOIN PR AS LEVEL3 on AR.WBS1 = LEVEL3.WBS1 AND AR.WBS2 = LEVEL3.WBS2 AND LEVEL3.WBS3 = AR.WBS3  
+LEFT JOIN BTBGSubs on PR.WBS1 = BTBGSubs.SubWBS1  
+LEFT JOIN CL on CL.clientID = PR.ClientID  
+LEFT JOIN CL as CLBill on CLBill.clientID = PR.billingClientID  
+LEFT JOIN Contacts as BLCT on BLCT.ContactID = PR.BillingContactID  
+WHERE AR.WBS1 = ledgerAR.WBS1 And AR.WBS2 = ledgerAR.WBS2 And AR.WBS3 = ledgerAR.WBS3 And AR.Invoice = LedgerAR.Invoice  AND ((ledgerAR.TransType = /*N*/'IN' AND (ledgerAR.SubType <> 'X' Or ledgerAR.SubType Is Null)) OR (ledgerAR.TransType =/*N*/'CR' AND ledgerAR.SubType IN ('R','T')))   AND ledgerAR.AutoEntry = 'N'  AND amount<> 0   AND ledgerAR.Period <= @custvPeriod          
+group by ledgerAR.wbs1,ledgerAR.invoice) A  
+INNER JOIN (select  AR.wbs1 as minWBS1,  AR.Invoice as minInvoice,  min(AR.invoiceDate) as minInvoiceDate,  min(case when paidperiod>@custvPeriod then retainageDate else NULL end) as minRetainageDate ,   min(case when paidperiod>@custvPeriod then AR.DueDate else NULL end) as minDueDate  
+FROM AR, PR LEFT JOIN BTBGSubs on PR.WBS1 = BTBGSubs.SubWBS1   
+LEFT JOIN CL on CL.clientID = PR.ClientID 
+LEFT JOIN CL as CLBill on CLBill.clientID = PR.billingClientID  
+LEFT JOIN Contacts as BLCT on BLCT.ContactID = PR.BillingContactID, PR AS LEVEL2, PR AS LEVEL3   
+WHERE AR.WBS1 = PR.WBS1 AND PR.WBS2 = /*N*/' ' AND PR.WBS3 = /*N*/' '   AND AR.WBS1 = LEVEL2.WBS1 AND AR.WBS2 = LEVEL2.WBS2 AND LEVEL2.WBS3 = /*N*/' '   AND AR.WBS1 = LEVEL3.WBS1 AND AR.WBS2 = LEVEL3.WBS2 AND AR.WBS3 = LEVEL3.WBS3            
+group by AR.wbs1, AR.Invoice  ) B  on A.WBS1=B.minWBS1 and A.invoice=B.minInvoice) MinAR
+
+WHERE 
+AR.WBS1 = MinAR.minWBS1 
+AND AR.Invoice = MinAR.minInvoice 
+AND (ledgerAR.TransType = /*N*/'IN' AND (ledgerAR.SubType <> 'X' Or ledgerAR.SubType Is Null) OR 
+    (ledgerAR.TransType =/*N*/'CR' AND ledgerAR.SubType IN ('R','T'))) 
+AND ledgerAR.AutoEntry = 'N' 
+AND ledgerAR.Period <= @custvPeriod
+AND amount  <> 0 
+AND ledgerAR.Period>= 0 AND ledgerAR.Period<= @custvPeriod  AND AR.PaidPeriod > @custvPeriod 
+AND AR.linkCompany IS NULL 
+
+Group By
+ISNULL(CASE WHEN PROJMGRName.FirstName IS NULL THEN PROJMGRName.LastName ELSE PROJMGRName.LastName + ', ' + PROJMGRName.FirstName END, ''), ISNULL(PR.WBS1, ''), 
+ledgerAR.WBS1, AR.Invoice, PRPrincipal.LastName, PRProjMgr.LastName, ProjectCustomTabFields.CustPaymentTerms, CL.Name
+
+HAVING  (Sum(case when ledgerAR.TransType= /*N*/'IN' then -amount else  case when ledgerAR.TransType= /*N*/'CR' AND ledgerAR.SubType='T' then -amount else amount end end) <> 0 ) and ProjectCustomTabFields.CustPaymentTerms>0
